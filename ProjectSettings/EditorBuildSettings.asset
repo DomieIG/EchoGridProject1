@@ -4,5 +4,11 @@
 EditorBuildSettings:
   m_ObjectHideFlags: 0
   serializedVersion: 2
-  m_Scenes: []
-  m_configObjects: {}
+  m_Scenes:
+  - enabled: 1
+    path: Assets/Scenes/BankScene.unity
+    guid: d661c3a12993a154886519d1e9ab7fc1
+  m_configObjects:
+    Unity.XR.Oculus.Settings: {fileID: 11400000, guid: fa08dd9b102cd8d48a8b187e627e767f, type: 2}
+    com.unity.xr.management.loader_settings: {fileID: 11400000, guid: 27a552515af1a5143ab1fe6ad9b4716d, type: 2}
+    com.unity.xr.openxr.settings4: {fileID: 11400000, guid: 9a761488100c75342a8beb81dadbdf4f, type: 2}
