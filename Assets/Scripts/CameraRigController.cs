@@ -108,4 +108,26 @@ public class CameraArcController : MonoBehaviour
             Debug.Log("CameraArcController: Player entered — switching to follow mode!");
         }
     }
+    public void SetRotationEnabled(bool enabled)
+    {
+        allowRotation = enabled;
+        if (!enabled)
+        {
+            isFollowingPlayer = false;
+            followTimer = 0f;
+        }
+    }
+    public void StopFollowing()
+    {
+        isFollowingPlayer = false;
+        followTimer = 0f;
+    }
+
+    public void ResetToMidpoint()
+    {
+        if (rotationPivot == null) return;
+        float mid = (leftLimit + rightLimit) / 2f;
+        rotationPivot.rotation = Quaternion.Euler(0f, mid, 0f);
+    }
+
 }

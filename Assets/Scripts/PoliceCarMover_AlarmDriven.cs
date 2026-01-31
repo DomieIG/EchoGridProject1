@@ -6,57 +6,77 @@ public class PoliceCarMover_AlarmDriven : MonoBehaviour
     [SerializeField] private Transform policeCar;
     [SerializeField] private Transform carMarker;
 
-    [Header("Escalation")]
-    [Tooltip("How long the alarm must be active (NOT suppressed) before police arrive.")]
-    [SerializeField] private float secondsUntilPoliceArrive = 120f;
-
     [Header("Movement")]
     [SerializeField] private float moveSpeed = 5f;
+    [SerializeField] private float stopDistance = 0.1f;
 
-    private float alarmActiveUnsuppressedTime;
-    private bool shouldMove;
+    [Header("Debug")]
+    [SerializeField] private bool debugLogs = true;
+    [SerializeField] private string debugTag = "[POLICE]";
 
-    private void Update()
+    private bool _shouldMove;
+
+    private void OnEnable()
     {
         var alarm = AlarmSystem.Instance;
         if (!alarm) return;
 
-        // Count only when alarm is actually sounding (active) AND not suppressed
-        if (alarm.AlarmActive && !alarm.Suppressed)
+        alarm.OnPoliceArrived += HandlePoliceArrived;
+        alarm.OnPoliceEscalationReset += HandlePoliceReset;
+
+        // If enabled mid-game and police already arrived:
+        if (alarm.PoliceArrived)
+            _shouldMove = true;
+    }
+
+    private void OnDisable()
+    {
+        var alarm = AlarmSystem.Instance;
+        if (!alarm) return;
+
+        alarm.OnPoliceArrived -= HandlePoliceArrived;
+        alarm.OnPoliceEscalationReset -= HandlePoliceReset;
+    }
+
+    private void Update()
+    {
+        if (!_shouldMove) return;
+        if (!policeCar || !carMarker) return;
+
+        Vector3 targetPosition = new Vector3(
+            carMarker.position.x,
+            policeCar.position.y,
+            carMarker.position.z
+        );
+
+        policeCar.position = Vector3.MoveTowards(
+            policeCar.position,
+            targetPosition,
+            moveSpeed * Time.deltaTime
+        );
+
+        if (Vector3.Distance(policeCar.position, targetPosition) <= stopDistance)
         {
-            alarmActiveUnsuppressedTime += Time.deltaTime;
-
-            if (!shouldMove && alarmActiveUnsuppressedTime >= secondsUntilPoliceArrive)
-                shouldMove = true;
-        }
-
-        // If you want suppression to "buy time", do nothing while suppressed.
-        // If you want suppression to fully reset progress, uncomment below:
-        // if (alarm.Suppressed) alarmActiveUnsuppressedTime = 0f;
-
-        if (shouldMove && policeCar && carMarker)
-        {
-            Vector3 targetPosition = new Vector3(
-                carMarker.position.x,
-                policeCar.position.y,
-                carMarker.position.z
-            );
-
-            policeCar.position = Vector3.MoveTowards(
-                policeCar.position,
-                targetPosition,
-                moveSpeed * Time.deltaTime
-            );
-
-            if (Vector3.Distance(policeCar.position, targetPosition) < 0.1f)
-                shouldMove = false;
+            _shouldMove = false;
+            Log("Police car reached marker; movement stopped.");
         }
     }
 
-    // Optional: call this if you ever want to reset police progress (new attempt / restart)
-    public void ResetPoliceResponse()
+    private void HandlePoliceArrived()
     {
-        alarmActiveUnsuppressedTime = 0f;
-        shouldMove = false;
+        _shouldMove = true;
+        Log("Received PoliceArrived event; beginning movement.");
+    }
+
+    private void HandlePoliceReset()
+    {
+        _shouldMove = false;
+        Log("Received PoliceEscalationReset event; movement stopped/reset.");
+    }
+
+    private void Log(string msg)
+    {
+        if (!debugLogs) return;
+        Debug.Log($"{debugTag} {msg}", this);
     }
 }
