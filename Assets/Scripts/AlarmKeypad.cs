@@ -1,5 +1,7 @@
+// AlarmKeypad.cs
 using UnityEngine;
 
+[DisallowMultipleComponent]
 public class AlarmKeypad : MonoBehaviour
 {
     [Header("Code Settings")]
@@ -10,15 +12,37 @@ public class AlarmKeypad : MonoBehaviour
     [SerializeField] private bool debugLogs = true;
     [SerializeField] private string debugTag = "[KEYPAD]";
 
+    /// <summary>
+    /// Single source of truth for whether the keypad is allowed to be used right now.
+    /// Disabled during suppression.
+    /// </summary>
+    public bool CanInteractNow
+    {
+        get
+        {
+            var alarm = AlarmSystem.Instance;
+            if (alarm == null) return false;
+            if (alarm.Suppressed) return false;
+            return allowWhenAlarmInactive || alarm.AlarmActive;
+        }
+    }
+
     public bool TrySubmitCode(string entered)
     {
-        if (AlarmSystem.Instance == null)
+        var alarm = AlarmSystem.Instance;
+        if (alarm == null)
         {
             Log("TrySubmitCode failed: AlarmSystem.Instance is null.");
             return false;
         }
 
-        if (!allowWhenAlarmInactive && !AlarmSystem.Instance.AlarmActive)
+        if (alarm.Suppressed)
+        {
+            Log("TrySubmitCode blocked: alarm is suppressed.");
+            return false;
+        }
+
+        if (!allowWhenAlarmInactive && !alarm.AlarmActive)
         {
             Log($"TrySubmitCode blocked: alarm inactive (allowWhenAlarmInactive={allowWhenAlarmInactive}).");
             return false;
@@ -27,7 +51,7 @@ public class AlarmKeypad : MonoBehaviour
         if (entered == correctCode)
         {
             Log("Correct code entered. Starting suppression.");
-            AlarmSystem.Instance.StartSuppression("Keypad code accepted");
+            alarm.StartSuppression("Keypad code accepted");
             return true;
         }
 

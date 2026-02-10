@@ -1,130 +1,167 @@
+// SecurityCameraController.cs
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 
+[DisallowMultipleComponent]
 public class SecurityCameraController : MonoBehaviour
 {
-    [System.Serializable]
+    [Serializable]
     public class CameraUnit
     {
         [Header("Camera Rendering")]
         public Camera cam;
 
         [Header("Rotation Rig (the thing that rotates)")]
-        [Tooltip("Assign the Transform that actually rotates (often the camera pivot or parent).")]
         public Transform rotationRig;
 
         [Tooltip("If rotation is driven by scripts/animators, drag them here to disable.")]
-        public List<Behaviour> motionDrivers;
+        public List<Behaviour> motionDrivers = new List<Behaviour>();
 
         [Header("Monitor Screen (optional)")]
         public Renderer monitorRenderer;
-        public int monitorMaterialIndex = 0;
+        [Min(0)] public int monitorMaterialIndex = 0;
         public Material liveMaterial;
         public Material staticMaterial;
 
         [Header("Sensor Light (optional)")]
-        [Tooltip("Drag the Light component used as the red sensor light (if any).")]
         public Light sensorLight;
 
-        [Tooltip("If the red glow is emissive on a mesh, drag that renderer here.")]
+        [Header("Sensor Glow (optional emissive)")]
         public Renderer sensorGlowRenderer;
-
-        [Tooltip("Name of the emissive color property. Built-in/URP often uses _EmissionColor.")]
         public string emissionColorProperty = "_EmissionColor";
         public Color sensorOffEmission = Color.black;
 
         [HideInInspector] public Quaternion savedRotation;
         [HideInInspector] public bool rotationFrozen;
+
+        [NonSerialized] public Material[] cachedGlowMaterials;
     }
 
+    [Header("Camera Units")]
     [SerializeField] private List<CameraUnit> units = new List<CameraUnit>();
+
+    [Header("Debug")]
+    [SerializeField] private bool debugLogs = false;
+    [SerializeField] private string debugTag = "[SEC_CAM]";
+
+    private bool _camerasDisabledToStatic;
 
     public void DisableCamerasToStatic()
     {
-        foreach (var u in units)
+        _camerasDisabledToStatic = true;
+
+        for (int ui = 0; ui < units.Count; ui++)
         {
-            // 1) Stop rendering
+            var u = units[ui];
+            if (u == null) continue;
+
             if (u.cam) u.cam.enabled = false;
 
-            // 2) Disable motion drivers (scripts, Animator, etc.)
             if (u.motionDrivers != null)
             {
-                foreach (var b in u.motionDrivers)
+                for (int i = 0; i < u.motionDrivers.Count; i++)
+                {
+                    var b = u.motionDrivers[i];
                     if (b) b.enabled = false;
+                }
             }
 
-            // 2b) Freeze rotation rig even if something else still tries to move it
             if (u.rotationRig && !u.rotationFrozen)
             {
                 u.savedRotation = u.rotationRig.rotation;
                 u.rotationFrozen = true;
             }
 
-            // 3) Static monitor screen
-            if (u.monitorRenderer && u.staticMaterial)
-            {
-                var mats = u.monitorRenderer.sharedMaterials;
-                if (u.monitorMaterialIndex >= 0 && u.monitorMaterialIndex < mats.Length)
-                {
-                    mats[u.monitorMaterialIndex] = u.staticMaterial;
-                    u.monitorRenderer.sharedMaterials = mats;
-                }
-            }
+            TrySetRendererMaterial(u.monitorRenderer, u.monitorMaterialIndex, u.staticMaterial);
 
-            // 4) Turn off sensor light
             if (u.sensorLight) u.sensorLight.enabled = false;
 
-            // 5) Turn off emissive glow (optional)
-            if (u.sensorGlowRenderer)
-            {
-                var mats = u.sensorGlowRenderer.materials; // instance materials so we can change emissive
-                for (int i = 0; i < mats.Length; i++)
-                {
-                    if (mats[i] && mats[i].HasProperty(u.emissionColorProperty))
-                        mats[i].SetColor(u.emissionColorProperty, u.sensorOffEmission);
-                }
-            }
+            SetGlowEmission(u, u.sensorOffEmission);
         }
+
+        Log("DisableCamerasToStatic executed.");
     }
 
     public void EnableCamerasLive()
     {
-        foreach (var u in units)
+        _camerasDisabledToStatic = false;
+
+        for (int ui = 0; ui < units.Count; ui++)
         {
+            var u = units[ui];
+            if (u == null) continue;
+
             if (u.cam) u.cam.enabled = true;
 
             if (u.motionDrivers != null)
             {
-                foreach (var b in u.motionDrivers)
-                    if (b) b.enabled = true;
-            }
-
-            // Unfreeze rotation (let drivers rotate again)
-            u.rotationFrozen = false;
-
-            if (u.monitorRenderer && u.liveMaterial)
-            {
-                var mats = u.monitorRenderer.sharedMaterials;
-                if (u.monitorMaterialIndex >= 0 && u.monitorMaterialIndex < mats.Length)
+                for (int i = 0; i < u.motionDrivers.Count; i++)
                 {
-                    mats[u.monitorMaterialIndex] = u.liveMaterial;
-                    u.monitorRenderer.sharedMaterials = mats;
+                    var b = u.motionDrivers[i];
+                    if (b) b.enabled = true;
                 }
             }
 
-            if (u.sensorLight) u.sensorLight.enabled = true;
+            u.rotationFrozen = false;
 
-            // If you want emissive to come back on, set it here too (optional).
+            TrySetRendererMaterial(u.monitorRenderer, u.monitorMaterialIndex, u.liveMaterial);
+
+            if (u.sensorLight) u.sensorLight.enabled = true;
         }
+
+        Log("EnableCamerasLive executed.");
     }
 
     private void LateUpdate()
     {
-        // Hard-freeze rotation rig every frame after animations/scripts (LateUpdate is key).
-        foreach (var u in units)
+        if (!_camerasDisabledToStatic) return;
+
+        for (int ui = 0; ui < units.Count; ui++)
         {
+            var u = units[ui];
+            if (u == null) continue;
+
             if (u.rotationFrozen && u.rotationRig)
                 u.rotationRig.rotation = u.savedRotation;
         }
+    }
+
+    private static void TrySetRendererMaterial(Renderer r, int materialIndex, Material newMat)
+    {
+        if (!r || !newMat) return;
+
+        var mats = r.sharedMaterials;
+        if (mats == null || mats.Length == 0) return;
+        if (materialIndex < 0 || materialIndex >= mats.Length) return;
+
+        if (mats[materialIndex] == newMat) return;
+
+        mats[materialIndex] = newMat;
+        r.sharedMaterials = mats;
+    }
+
+    private void SetGlowEmission(CameraUnit u, Color emissionColor)
+    {
+        if (!u.sensorGlowRenderer) return;
+
+        if (u.cachedGlowMaterials == null || u.cachedGlowMaterials.Length == 0)
+            u.cachedGlowMaterials = u.sensorGlowRenderer.materials; // instanced once
+
+        var mats = u.cachedGlowMaterials;
+        for (int i = 0; i < mats.Length; i++)
+        {
+            var m = mats[i];
+            if (!m) continue;
+
+            if (m.HasProperty(u.emissionColorProperty))
+                m.SetColor(u.emissionColorProperty, emissionColor);
+        }
+    }
+
+    private void Log(string msg)
+    {
+        if (!debugLogs) return;
+        Debug.Log($"{debugTag} {msg}", this);
     }
 }

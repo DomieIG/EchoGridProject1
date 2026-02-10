@@ -1,6 +1,9 @@
+// AlarmSystem.cs
 using System;
 using UnityEngine;
 
+[DisallowMultipleComponent]
+[DefaultExecutionOrder(-100)] // Make Instance available early for other OnEnable subscribers.
 public class AlarmSystem : MonoBehaviour
 {
     public static AlarmSystem Instance { get; private set; }
@@ -19,26 +22,28 @@ public class AlarmSystem : MonoBehaviour
     public event Action<float> OnSuppressionStarted; // seconds
     public event Action OnSuppressionEnded;
 
-    // Police escalation events (same timer for police + UI)
     public event Action<float, float> OnPoliceEtaChanged; // remaining, total
     public event Action OnPoliceArrived;
     public event Action OnPoliceEscalationReset;
 
     [Header("Suppression")]
-    [SerializeField] private float suppressionDurationSeconds = 300f; // 5 minutes
+    [SerializeField, Min(0f)] private float suppressionDurationSeconds = 300f;
 
     [Header("Police Escalation")]
     [Tooltip("How long the alarm must be active (and not suppressed) before police arrive.")]
-    [SerializeField] private float secondsUntilPoliceArrive = 120f;
+    [SerializeField, Min(0f)] private float secondsUntilPoliceArrive = 120f;
 
     [Tooltip("If true, suppression resets police escalation progress to 0. If false, suppression pauses progress.")]
     [SerializeField] private bool suppressionResetsPoliceProgress = false;
 
     private float _suppressedUntilTime = -1f;
 
-    // “Unsuppressed active” accumulation
+    // Unsuppressed active accumulation
     private float _alarmActiveUnsuppressedTime;
     private bool _policeArrived;
+
+    // ETA broadcast throttling (prevents spamming identical values)
+    private float _lastBroadcastRemaining = float.NaN;
 
     private void Awake()
     {
@@ -51,6 +56,12 @@ public class AlarmSystem : MonoBehaviour
         Instance = this;
     }
 
+    private void OnDestroy()
+    {
+        if (Instance == this)
+            Instance = null;
+    }
+
     private void Update()
     {
         // Suppression end
@@ -61,7 +72,6 @@ public class AlarmSystem : MonoBehaviour
             OnSuppressionEnded?.Invoke();
         }
 
-        // Police escalation timing (single source of truth)
         TickPoliceEscalation();
     }
 
@@ -70,28 +80,37 @@ public class AlarmSystem : MonoBehaviour
         if (_policeArrived)
             return;
 
-        // Only count when alarm is actively sounding AND not suppressed
-        if (AlarmActive && !Suppressed)
+        bool counting = AlarmActive && !Suppressed;
+        if (counting)
         {
             _alarmActiveUnsuppressedTime += Time.deltaTime;
 
-            float remaining = Mathf.Max(0f, secondsUntilPoliceArrive - _alarmActiveUnsuppressedTime);
-            OnPoliceEtaChanged?.Invoke(remaining, secondsUntilPoliceArrive);
-
             if (_alarmActiveUnsuppressedTime >= secondsUntilPoliceArrive)
             {
+                _alarmActiveUnsuppressedTime = secondsUntilPoliceArrive;
                 _policeArrived = true;
+
+                BroadcastPoliceEta(force: true);
                 Log($"Police ARRIVED (threshold {secondsUntilPoliceArrive:0.00}s reached).");
                 OnPoliceArrived?.Invoke();
+                return;
             }
         }
-        else
-        {
-            // If alarm isn’t counting right now, still broadcast current remaining
-            // (lets UI stay correct when paused/stopped/suppressed)
-            float remaining = Mathf.Max(0f, secondsUntilPoliceArrive - _alarmActiveUnsuppressedTime);
-            OnPoliceEtaChanged?.Invoke(remaining, secondsUntilPoliceArrive);
-        }
+
+        BroadcastPoliceEta(force: false);
+    }
+
+    private void BroadcastPoliceEta(bool force)
+    {
+        float remaining = Mathf.Max(0f, secondsUntilPoliceArrive - _alarmActiveUnsuppressedTime);
+
+        // Only broadcast if changed meaningfully or forced.
+        // (Prevents redundant UI updates when alarm is inactive.)
+        if (!force && !float.IsNaN(_lastBroadcastRemaining) && Mathf.Abs(remaining - _lastBroadcastRemaining) < 0.01f)
+            return;
+
+        _lastBroadcastRemaining = remaining;
+        OnPoliceEtaChanged?.Invoke(remaining, secondsUntilPoliceArrive);
     }
 
     public void TriggerAlarm(string reason = null)
@@ -111,6 +130,9 @@ public class AlarmSystem : MonoBehaviour
         AlarmActive = true;
         Log($"Alarm TRIGGERED. Reason: {reason}");
         OnAlarmTriggered?.Invoke();
+
+        // Ensure ETA is updated immediately when alarm starts
+        BroadcastPoliceEta(force: true);
     }
 
     public void StopAlarm(string reason = null)
@@ -124,6 +146,9 @@ public class AlarmSystem : MonoBehaviour
         AlarmActive = false;
         Log($"Alarm STOPPED. Reason: {reason}");
         OnAlarmStopped?.Invoke();
+
+        // Keep UI consistent
+        BroadcastPoliceEta(force: true);
     }
 
     public void StartSuppression(string reason = null)
@@ -132,13 +157,10 @@ public class AlarmSystem : MonoBehaviour
 
         Log($"Suppression STARTED for {suppressionDurationSeconds:0}s. Reason: {reason}");
 
-        // Stop current alarm sound/state
         StopAlarm("Suppression started");
 
         if (suppressionResetsPoliceProgress)
-        {
             ResetPoliceEscalationInternal("Suppression reset police progress");
-        }
 
         OnSuppressionStarted?.Invoke(suppressionDurationSeconds);
     }
@@ -149,7 +171,7 @@ public class AlarmSystem : MonoBehaviour
         return Mathf.Max(0f, _suppressedUntilTime - Time.time);
     }
 
-    // --- Police API (for UI / other systems) ---
+    // --- Police API ---
     public bool PoliceArrived => _policeArrived;
 
     public float GetPoliceRemainingSeconds()
@@ -160,21 +182,17 @@ public class AlarmSystem : MonoBehaviour
 
     public float GetPoliceTotalSeconds() => secondsUntilPoliceArrive;
 
-    public void ResetPoliceEscalation(string reason = null)
-    {
-        ResetPoliceEscalationInternal(reason);
-    }
+    public void ResetPoliceEscalation(string reason = null) => ResetPoliceEscalationInternal(reason);
 
     private void ResetPoliceEscalationInternal(string reason)
     {
         _alarmActiveUnsuppressedTime = 0f;
         _policeArrived = false;
+        _lastBroadcastRemaining = float.NaN;
 
         Log($"Police escalation RESET. Reason: {reason}");
         OnPoliceEscalationReset?.Invoke();
-
-        // push updated ETA immediately
-        OnPoliceEtaChanged?.Invoke(secondsUntilPoliceArrive, secondsUntilPoliceArrive);
+        BroadcastPoliceEta(force: true);
     }
 
     private void Log(string msg)
