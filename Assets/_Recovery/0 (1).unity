@@ -2196,7 +2196,7 @@ MonoBehaviour:
   mainMenuPanel: {fileID: 1346377143}
   preMatchPanel: {fileID: 739113728}
   settingsPanel: {fileID: 708771821}
-  mainMenuDefault: {fileID: 0}
+  mainMenuDefault: {fileID: 96587638}
   lobbyDefault: {fileID: 1620423116}
   settingsDefault: {fileID: 1524263068}
   startMatchButton: {fileID: 589843120}
