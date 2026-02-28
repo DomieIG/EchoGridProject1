@@ -5,28 +5,13 @@ using UnityEngine;
 [RequireComponent(typeof(CanvasGroup))]
 public sealed class UIPanel : MonoBehaviour
 {
-    [Header("Config (Optional)")]
-    [SerializeField] private UIConfig config;
-
-    [Header("Animation Overrides (used if no config)")]
-    [SerializeField, Min(0.05f)] private float duration = 0.22f;
-    [SerializeField] private float hiddenScale = 0.97f;
-
-    [Header("Behavior")]
+    [SerializeField] private float duration = 0.22f;
+    [SerializeField, Range(0.5f, 1f)] private float hiddenScale = 0.97f;
     [SerializeField] private bool disableGameObjectWhenHidden = true;
 
     CanvasGroup cg;
     RectTransform rt;
     Coroutine routine;
-    bool isVisible;
-
-    public bool IsVisible => isVisible;
-
-    private void Reset()
-    {
-        cg = GetComponent<CanvasGroup>();
-        rt = GetComponent<RectTransform>();
-    }
 
     private void Awake()
     {
@@ -34,24 +19,13 @@ public sealed class UIPanel : MonoBehaviour
         rt = GetComponent<RectTransform>();
     }
 
-    private void OnValidate()
-    {
-        if (duration < 0.05f) duration = 0.05f;
-        hiddenScale = Mathf.Clamp(hiddenScale, 0.5f, 1f);
-    }
-
     public void Show(bool instant = false)
     {
-        isVisible = true;
-        gameObject.SetActive(true);
+        if (!gameObject.activeSelf) gameObject.SetActive(true);
 
         SetInteractable(true);
 
-        float d = GetDuration();
-        float hs = GetHiddenScale();
-        bool reduce = ReducedMotion();
-
-        if (instant || reduce)
+        if (instant)
         {
             cg.alpha = 1f;
             rt.localScale = Vector3.one;
@@ -59,28 +33,23 @@ public sealed class UIPanel : MonoBehaviour
             return;
         }
 
-        StartAnim(Animate(cg.alpha, 1f, rt.localScale.x, 1f, d, null));
+        StartAnim(Animate(cg.alpha, 1f, rt.localScale.x, 1f, duration, null));
     }
 
     public void Hide(bool instant = false)
     {
-        isVisible = false;
         SetInteractable(false);
 
-        float d = GetDuration();
-        float hs = GetHiddenScale();
-        bool reduce = ReducedMotion();
-
-        if (instant || reduce)
+        if (instant)
         {
             cg.alpha = 0f;
-            rt.localScale = new Vector3(hs, hs, 1f);
+            rt.localScale = new Vector3(hiddenScale, hiddenScale, 1f);
             StopRoutine();
             if (disableGameObjectWhenHidden) gameObject.SetActive(false);
             return;
         }
 
-        StartAnim(Animate(cg.alpha, 0f, rt.localScale.x, hs, d, () =>
+        StartAnim(Animate(cg.alpha, 0f, rt.localScale.x, hiddenScale, duration, () =>
         {
             if (disableGameObjectWhenHidden) gameObject.SetActive(false);
         }));
@@ -94,11 +63,7 @@ public sealed class UIPanel : MonoBehaviour
 
     void StopRoutine()
     {
-        if (routine != null)
-        {
-            StopCoroutine(routine);
-            routine = null;
-        }
+        if (routine != null) { StopCoroutine(routine); routine = null; }
     }
 
     void StartAnim(IEnumerator e)
@@ -110,12 +75,11 @@ public sealed class UIPanel : MonoBehaviour
     IEnumerator Animate(float fromA, float toA, float fromS, float toS, float d, System.Action onDone)
     {
         float t = 0f;
-
         while (t < d)
         {
             t += Time.unscaledDeltaTime;
-            float u = UIEase.Clamp01(t / d);
-            float e = UIEase.EaseOutCubic(u);
+            float u = Mathf.Clamp01(t / d);
+            float e = 1f - Mathf.Pow(1f - u, 3f);
 
             cg.alpha = Mathf.Lerp(fromA, toA, e);
             float s = Mathf.Lerp(fromS, toS, e);
@@ -130,8 +94,4 @@ public sealed class UIPanel : MonoBehaviour
         routine = null;
         onDone?.Invoke();
     }
-
-    float GetDuration() => config ? (config.reducedMotion ? 0f : config.panelDuration) : duration;
-    float GetHiddenScale() => config ? config.panelHiddenScale : hiddenScale;
-    bool ReducedMotion() => config && config.reducedMotion;
 }

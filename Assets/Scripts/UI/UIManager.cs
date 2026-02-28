@@ -1,4 +1,4 @@
-using System.Collections;
+﻿using System.Collections;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
@@ -7,15 +7,12 @@ public enum MenuState { MainMenu, Lobby, Settings }
 
 public sealed class UIManager : MonoBehaviour
 {
-    [Header("Config (Optional)")]
-    [SerializeField] private UIConfig config;
-
-    [Header("Panels")]
+    [Header("Panels (UIPanel components)")]
     [SerializeField] private UIPanel mainMenuPanel;
     [SerializeField] private UIPanel preMatchPanel;
     [SerializeField] private UIPanel settingsPanel;
 
-    [Header("Default Selected (for keyboard/controller)")]
+    [Header("Default Selected (optional)")]
     [SerializeField] private Selectable mainMenuDefault;
     [SerializeField] private Selectable lobbyDefault;
     [SerializeField] private Selectable settingsDefault;
@@ -23,107 +20,99 @@ public sealed class UIManager : MonoBehaviour
     [Header("Lobby UI")]
     [SerializeField] private Button startMatchButton;
 
-    [Header("Audio (Optional)")]
-    [SerializeField] private UIAudio uiAudio;
-
-    [Header("Transition Lock")]
-    [SerializeField, Min(0f)] private float inputLockExtra = 0.02f;
+    [Header("Input Lock")]
+    [SerializeField, Min(0f)] private float inputLockDuration = 0.15f;
 
     public MenuState CurrentState { get; private set; } = MenuState.MainMenu;
+
+    // ✅ THIS FIXES YOUR ERROR
     public bool InputLocked { get; private set; }
 
-    Coroutine lockRoutine;
+    private Coroutine inputLockRoutine;
 
     private void Awake()
     {
-        // Hard boot state with no flicker
-        SetState(MenuState.MainMenu, instant: true);
+        // Hard boot state
+        if (preMatchPanel) preMatchPanel.Hide(true);
+        if (settingsPanel) settingsPanel.Hide(true);
+        if (mainMenuPanel) mainMenuPanel.Show(true);
+
+        CurrentState = MenuState.MainMenu;
+
         SetStartMatchInteractable(false);
+        SelectDefault(MenuState.MainMenu);
     }
 
     public void SetState(MenuState state, bool instant = false)
     {
         CurrentState = state;
 
-        // Lock input briefly so clicks don't bleed between panels
-        LockInput(GetTransitionDuration(instant));
+        if (!instant)
+            LockInput(inputLockDuration);
 
-        // Hide all then show target
-        if (mainMenuPanel) mainMenuPanel.Hide(instant);
-        if (preMatchPanel) preMatchPanel.Hide(instant);
-        if (settingsPanel) settingsPanel.Hide(instant);
-
-        switch (state)
+        UIPanel target = state switch
         {
-            case MenuState.MainMenu:
-                if (mainMenuPanel) mainMenuPanel.Show(instant);
-                SelectAfter(mainMenuDefault, instant);
-                break;
+            MenuState.MainMenu => mainMenuPanel,
+            MenuState.Lobby => preMatchPanel,
+            MenuState.Settings => settingsPanel,
+            _ => mainMenuPanel
+        };
 
-            case MenuState.Lobby:
-                if (preMatchPanel) preMatchPanel.Show(instant);
-                SelectAfter(lobbyDefault, instant);
-                break;
-
-            case MenuState.Settings:
-                if (settingsPanel) settingsPanel.Show(instant);
-                SelectAfter(settingsDefault, instant);
-                break;
+        if (!target)
+        {
+            Debug.LogError($"[UIManager] Missing panel reference for '{state}'.", this);
+            return;
         }
 
-        if (!instant && uiAudio) uiAudio.PlayPanelWhoosh();
+        // Show target first (prevents blank screen)
+        target.Show(instant);
+
+        if (mainMenuPanel && mainMenuPanel != target) mainMenuPanel.Hide(instant);
+        if (preMatchPanel && preMatchPanel != target) preMatchPanel.Hide(instant);
+        if (settingsPanel && settingsPanel != target) settingsPanel.Hide(instant);
+
+        SelectDefault(state);
     }
 
     public void SetStartMatchInteractable(bool canStart)
     {
-        if (startMatchButton) startMatchButton.interactable = canStart;
+        if (startMatchButton)
+            startMatchButton.interactable = canStart;
     }
 
-    public void LockInput(float seconds)
+    private void LockInput(float seconds)
     {
         if (seconds <= 0f) return;
 
         InputLocked = true;
-        if (lockRoutine != null) StopCoroutine(lockRoutine);
-        lockRoutine = StartCoroutine(UnlockAfter(seconds + inputLockExtra));
+
+        if (inputLockRoutine != null)
+            StopCoroutine(inputLockRoutine);
+
+        inputLockRoutine = StartCoroutine(UnlockAfter(seconds));
     }
 
-    IEnumerator UnlockAfter(float seconds)
+    private IEnumerator UnlockAfter(float seconds)
     {
         yield return new WaitForSecondsRealtime(seconds);
         InputLocked = false;
-        lockRoutine = null;
+        inputLockRoutine = null;
     }
 
-    void SelectAfter(Selectable target, bool instant)
+    private void SelectDefault(MenuState state)
     {
-        if (!target) return;
-
-        // EventSystem might not exist in some scenes�safe guard
         if (!EventSystem.current) return;
 
-        if (instant || (config && config.reducedMotion))
+        Selectable target = state switch
         {
-            EventSystem.current.SetSelectedGameObject(target.gameObject);
-        }
-        else
-        {
-            // Wait a frame so the panel is active & interactable
-            StartCoroutine(SelectNextFrame(target));
-        }
-    }
+            MenuState.MainMenu => mainMenuDefault,
+            MenuState.Lobby => lobbyDefault,
+            MenuState.Settings => settingsDefault,
+            _ => null
+        };
 
-    IEnumerator SelectNextFrame(Selectable target)
-    {
-        yield return null;
-        if (!EventSystem.current) yield break;
+        if (!target) return;
+
         EventSystem.current.SetSelectedGameObject(target.gameObject);
-    }
-
-    float GetTransitionDuration(bool instant)
-    {
-        if (instant) return 0f;
-        if (config && config.reducedMotion) return 0f;
-        return config ? config.panelDuration : 0.22f;
     }
 }

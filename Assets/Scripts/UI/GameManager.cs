@@ -12,65 +12,68 @@ public sealed class GameManager : MonoBehaviour
 
     private bool inMultiplayerLobby;
     private bool isPartyLeader;
+    private bool isLoadingScene;
+
+    private MenuState stateBeforeExitPrompt = MenuState.MainMenu;
 
     private void Awake()
     {
         if (!ui) ui = FindAnyObjectByType<UIManager>();
         if (!sceneLoader) sceneLoader = FindAnyObjectByType<SceneLoader>();
-
-        // Find dialog even if it's inactive in hierarchy
         if (!confirmDialog) confirmDialog = FindInactiveSafe<UIConfirmDialog>();
 
         if (!ui) Debug.LogError("[GameManager] UIManager not found/assigned.", this);
-        if (!sceneLoader) Debug.LogWarning("[GameManager] SceneLoader not found; will load scenes directly.", this);
-        if (!confirmDialog) Debug.LogWarning("[GameManager] UIConfirmDialog not found/assigned; Exit will quit immediately.", this);
+        if (!confirmDialog) Debug.LogWarning("[GameManager] UIConfirmDialog not found. Exit will quit immediately.", this);
     }
 
     public void OnNewGamePressed()
     {
+        if (isLoadingScene) return;
+        if (ui && ui.InputLocked) return;
+
         inMultiplayerLobby = false;
         isPartyLeader = false;
+
         LoadBank();
     }
 
     public void OnMultiplayerPressed()
     {
+        if (isLoadingScene) return;
+        if (ui && ui.InputLocked) return;
+
         inMultiplayerLobby = true;
 
-        if (!ui)
-        {
-            Debug.LogError("[GameManager] UIManager missing, cannot open Lobby panel.");
-            return;
-        }
-
+        if (!ui) return;
         ui.SetState(MenuState.Lobby);
-        SetPartyLeader(true); // placeholder until real host logic
+
+        // placeholder until real host/party logic
+        SetPartyLeader(true);
     }
 
     public void OnSettingsPressed()
     {
-        if (!ui)
-        {
-            Debug.LogError("[GameManager] UIManager missing, cannot open Settings panel.");
-            return;
-        }
+        if (isLoadingScene) return;
+        if (ui && ui.InputLocked) return;
 
+        if (!ui) return;
         ui.SetState(MenuState.Settings);
     }
 
     public void OnBackToMenuPressed()
     {
-        if (!ui)
-        {
-            Debug.LogError("[GameManager] UIManager missing, cannot open Main Menu panel.");
-            return;
-        }
+        if (isLoadingScene) return;
+        if (ui && ui.InputLocked) return;
 
+        if (!ui) return;
         ui.SetState(MenuState.MainMenu);
     }
 
     public void OnStartMatchPressed()
     {
+        if (isLoadingScene) return;
+        if (ui && ui.InputLocked) return;
+
         if (inMultiplayerLobby && !isPartyLeader)
         {
             Debug.Log("Only the party leader can start the match.");
@@ -82,18 +85,30 @@ public sealed class GameManager : MonoBehaviour
 
     public void OnExitPressed()
     {
+        if (ui && ui.InputLocked) return;
+
+        // Remember what the user was viewing
+        if (ui) stateBeforeExitPrompt = ui.CurrentState;
+
         if (confirmDialog)
         {
             confirmDialog.Open(
                 title: "Exit Game",
                 body: "Are you sure you want to quit?",
-                confirm: QuitGame
+                confirm: QuitGame,
+                cancel: RestoreUIAfterExitPrompt
             );
         }
         else
         {
             QuitGame();
         }
+    }
+
+    private void RestoreUIAfterExitPrompt()
+    {
+        // Return to exactly what it was
+        if (ui) ui.SetState(stateBeforeExitPrompt);
     }
 
     public void SetPartyLeader(bool leader)
@@ -104,10 +119,18 @@ public sealed class GameManager : MonoBehaviour
 
     private void LoadBank()
     {
+        if (isLoadingScene) return;
+        isLoadingScene = true;
+
         if (sceneLoader)
-            sceneLoader.LoadSceneAsync(bankSceneName, "Loading Bank...");
+        {
+            sceneLoader.LoadSceneAsync(bankSceneName, "Loading Bank...", () => isLoadingScene = false);
+        }
         else
+        {
             UnityEngine.SceneManagement.SceneManager.LoadScene(bankSceneName);
+            isLoadingScene = false;
+        }
     }
 
     private void QuitGame()
@@ -120,11 +143,9 @@ public sealed class GameManager : MonoBehaviour
 
     private static T FindInactiveSafe<T>() where T : Object
     {
-        // Works even if object is disabled/inactive
         var all = Resources.FindObjectsOfTypeAll<T>();
         foreach (var obj in all)
         {
-            // Filter out assets/prefabs, keep scene instances
             if (obj is Component c && c.gameObject.scene.IsValid())
                 return obj;
         }
