@@ -1,3 +1,4 @@
+// UIEase.cs
 public static class UIEase
 {
     // Smooth & snappy without overshoot

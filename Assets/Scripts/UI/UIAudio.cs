@@ -1,3 +1,4 @@
+// UIAudio.cs
 using UnityEngine;
 
 [DisallowMultipleComponent]
@@ -25,9 +26,10 @@ public sealed class UIAudio : MonoBehaviour
     public void PlayClick() => Play(clickClip);
     public void PlayPanelWhoosh() => Play(panelWhooshClip);
 
-    void Play(AudioClip clip)
+    private void Play(AudioClip clip)
     {
         if (!source || !clip) return;
+
         float originalPitch = source.pitch;
         source.pitch = Random.Range(pitchRange.x, pitchRange.y);
         source.PlayOneShot(clip);

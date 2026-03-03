@@ -1,8 +1,10 @@
+// UIConfirmDialog.cs
 using System;
 using UnityEngine;
+using UnityEngine.EventSystems;
+using UnityEngine.InputSystem;
 using UnityEngine.UI;
 using TMPro;
-using UnityEngine.InputSystem;
 
 [RequireComponent(typeof(UIPanel))]
 public sealed class UIConfirmDialog : MonoBehaviour
@@ -19,6 +21,8 @@ public sealed class UIConfirmDialog : MonoBehaviour
     private Action onCancel;
     private bool isOpen;
 
+    private GameObject previousSelected;
+
     private void Reset()
     {
         panel = GetComponent<UIPanel>();
@@ -31,13 +35,7 @@ public sealed class UIConfirmDialog : MonoBehaviour
         if (confirmButton) confirmButton.onClick.AddListener(Confirm);
         if (cancelButton) cancelButton.onClick.AddListener(Cancel);
 
-        // IMPORTANT: ensure hidden immediately at boot
-        ForceHiddenImmediate();
-    }
-
-    private void Start()
-    {
-        // Extra safety for script execution order / one-frame flashes
+        // Ensure hidden immediately at boot (prevents one-frame flashes)
         ForceHiddenImmediate();
     }
 
@@ -52,8 +50,9 @@ public sealed class UIConfirmDialog : MonoBehaviour
 
     public void Open(string title, string body, Action confirm, Action cancel = null, bool instant = false)
     {
-        // Keep it active so it can always be found
         if (!gameObject.activeSelf) gameObject.SetActive(true);
+
+        previousSelected = EventSystem.current ? EventSystem.current.currentSelectedGameObject : null;
 
         onConfirm = confirm;
         onCancel = cancel;
@@ -63,6 +62,10 @@ public sealed class UIConfirmDialog : MonoBehaviour
 
         isOpen = true;
         panel.Show(instant);
+
+        // Optionally focus confirm button for keyboard/controller
+        if (EventSystem.current && confirmButton)
+            EventSystem.current.SetSelectedGameObject(confirmButton.gameObject);
     }
 
     private void Close(bool instant = false)
@@ -72,10 +75,17 @@ public sealed class UIConfirmDialog : MonoBehaviour
 
         onConfirm = null;
         onCancel = null;
+
+        // Restore selection for controller/keyboard UX
+        if (EventSystem.current)
+            EventSystem.current.SetSelectedGameObject(previousSelected);
+
+        previousSelected = null;
     }
 
     private void Confirm()
     {
+        if (!isOpen) return;
         var cb = onConfirm;
         Close();
         cb?.Invoke();
@@ -83,6 +93,7 @@ public sealed class UIConfirmDialog : MonoBehaviour
 
     private void Cancel()
     {
+        if (!isOpen) return;
         var cb = onCancel;
         Close();
         cb?.Invoke();
@@ -92,9 +103,8 @@ public sealed class UIConfirmDialog : MonoBehaviour
     {
         isOpen = false;
 
-        // Hide without disabling the GameObject (so it remains discoverable)
-        // IMPORTANT: set this in the UIPanel inspector too:
-        // disableGameObjectWhenHidden = false
+        // If you want the dialog object to remain discoverable:
+        // In the UIPanel inspector, set disableGameObjectWhenHidden = false.
         panel.Hide(instant: true);
     }
 }

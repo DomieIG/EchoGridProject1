@@ -1,3 +1,4 @@
+// UIButtonFX.cs
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
@@ -25,25 +26,29 @@ public sealed class UIButtonFX : MonoBehaviour,
     [Header("Optional Input Lock Source")]
     [SerializeField] private UIManager uiManager;
 
-    Button button;
-    Vector3 baseScale;
-    float desired = 1f;
-    bool hovering;
-    bool pressing;
+    private Selectable selectable;
+    private Vector3 baseScale;
+    private float desired = 1f;
+    private bool hovering;
+    private bool pressing;
 
     private void Reset()
     {
         target = transform;
-        button = GetComponent<Button>();
+        selectable = GetComponent<Selectable>();
     }
 
     private void Awake()
     {
         if (!target) target = transform;
-        button = GetComponent<Button>();
+        selectable = GetComponent<Selectable>();
         if (!uiManager) uiManager = FindFirstObjectByType<UIManager>();
 
         baseScale = target.localScale;
+
+        // Avoid divide-by-zero / weird scaling if someone set scale to 0
+        if (Mathf.Approximately(baseScale.x, 0f)) baseScale.x = 1f;
+        if (Mathf.Approximately(baseScale.y, 0f)) baseScale.y = 1f;
     }
 
     private void OnEnable()
@@ -51,21 +56,35 @@ public sealed class UIButtonFX : MonoBehaviour,
         hovering = false;
         pressing = false;
         desired = 1f;
-        target.localScale = baseScale;
+
+        if (target) target.localScale = baseScale;
+    }
+
+    private void OnDisable()
+    {
+        hovering = false;
+        pressing = false;
+        desired = 1f;
+
+        if (target) target.localScale = baseScale;
     }
 
     private void Update()
     {
+        if (!target) return;
+
         float current = target.localScale.x / baseScale.x;
         float lerpSpeed = GetSpeed();
+
+        // Smooth exponential damp (stable at any framerate)
         float next = Mathf.Lerp(current, desired, 1f - Mathf.Exp(-lerpSpeed * Time.unscaledDeltaTime));
         target.localScale = baseScale * next;
     }
 
-    bool CanInteract()
+    private bool CanInteract()
     {
         if (uiManager && uiManager.InputLocked) return false;
-        if (button && !button.interactable) return false;
+        if (selectable && !selectable.IsInteractable()) return false;
         return true;
     }
 
@@ -102,7 +121,7 @@ public sealed class UIButtonFX : MonoBehaviour,
         Recalc();
     }
 
-    void Recalc()
+    private void Recalc()
     {
         if (!CanInteract())
         {
@@ -115,7 +134,7 @@ public sealed class UIButtonFX : MonoBehaviour,
         else desired = 1f;
     }
 
-    float GetHoverScale() => config ? config.hoverScale : hoverScale;
-    float GetPressedScale() => config ? config.pressedScale : pressedScale;
-    float GetSpeed() => config ? config.scaleLerpSpeed : speed;
+    private float GetHoverScale() => config ? config.hoverScale : hoverScale;
+    private float GetPressedScale() => config ? config.pressedScale : pressedScale;
+    private float GetSpeed() => config ? config.scaleLerpSpeed : speed;
 }

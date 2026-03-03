@@ -1,9 +1,8 @@
-﻿using System.Collections;
+﻿// UIManager.cs
+using System.Collections;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
-
-public enum MenuState { MainMenu, Lobby, Settings }
 
 public sealed class UIManager : MonoBehaviour
 {
@@ -24,8 +23,6 @@ public sealed class UIManager : MonoBehaviour
     [SerializeField, Min(0f)] private float inputLockDuration = 0.15f;
 
     public MenuState CurrentState { get; private set; } = MenuState.MainMenu;
-
-    // ✅ THIS FIXES YOUR ERROR
     public bool InputLocked { get; private set; }
 
     private Coroutine inputLockRoutine;
@@ -38,9 +35,10 @@ public sealed class UIManager : MonoBehaviour
         if (mainMenuPanel) mainMenuPanel.Show(true);
 
         CurrentState = MenuState.MainMenu;
-
         SetStartMatchInteractable(false);
-        SelectDefault(MenuState.MainMenu);
+
+        // Ensure selection happens after objects are enabled
+        StartCoroutine(SelectNextFrame(MenuState.MainMenu));
     }
 
     public void SetState(MenuState state, bool instant = false)
@@ -71,7 +69,8 @@ public sealed class UIManager : MonoBehaviour
         if (preMatchPanel && preMatchPanel != target) preMatchPanel.Hide(instant);
         if (settingsPanel && settingsPanel != target) settingsPanel.Hide(instant);
 
-        SelectDefault(state);
+        // Selection is safer one frame later (layout + enable order)
+        StartCoroutine(SelectNextFrame(state));
     }
 
     public void SetStartMatchInteractable(bool canStart)
@@ -99,9 +98,11 @@ public sealed class UIManager : MonoBehaviour
         inputLockRoutine = null;
     }
 
-    private void SelectDefault(MenuState state)
+    private IEnumerator SelectNextFrame(MenuState state)
     {
-        if (!EventSystem.current) return;
+        yield return null; // wait one frame for enable/layout
+
+        if (!EventSystem.current) yield break;
 
         Selectable target = state switch
         {
@@ -111,8 +112,9 @@ public sealed class UIManager : MonoBehaviour
             _ => null
         };
 
-        if (!target) return;
+        if (!target) yield break;
 
+        EventSystem.current.SetSelectedGameObject(null);
         EventSystem.current.SetSelectedGameObject(target.gameObject);
     }
 }

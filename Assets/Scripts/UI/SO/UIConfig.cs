@@ -1,3 +1,4 @@
+// UIConfig.cs
 using UnityEngine;
 
 [CreateAssetMenu(menuName = "UI/UI Config", fileName = "UIConfig")]

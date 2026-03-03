@@ -1,6 +1,7 @@
+// UILoadingOverlay.cs
 using System.Collections;
-using UnityEngine;
 using TMPro;
+using UnityEngine;
 
 [RequireComponent(typeof(CanvasGroup))]
 public sealed class UILoadingOverlay : MonoBehaviour
@@ -9,8 +10,8 @@ public sealed class UILoadingOverlay : MonoBehaviour
     [SerializeField] private TMP_Text statusText;
     [SerializeField] private TMP_Text percentText; // optional
 
-    CanvasGroup cg;
-    Coroutine routine;
+    private CanvasGroup cg;
+    private Coroutine routine;
 
     private void Awake()
     {
@@ -35,9 +36,13 @@ public sealed class UILoadingOverlay : MonoBehaviour
 
     public void Hide(bool instant = false) => SetVisible(false, instant);
 
-    void SetVisible(bool visible, bool instant)
+    private void SetVisible(bool visible, bool instant)
     {
-        if (routine != null) StopCoroutine(routine);
+        if (routine != null)
+        {
+            StopCoroutine(routine);
+            routine = null;
+        }
 
         float target = visible ? 1f : 0f;
         cg.blocksRaycasts = visible;
@@ -46,7 +51,7 @@ public sealed class UILoadingOverlay : MonoBehaviour
         bool reduce = config && config.reducedMotion;
         float d = config ? config.loadingFadeDuration : 0.2f;
 
-        if (instant || reduce)
+        if (instant || reduce || d <= 0f)
         {
             cg.alpha = target;
             gameObject.SetActive(visible);
@@ -57,7 +62,7 @@ public sealed class UILoadingOverlay : MonoBehaviour
         routine = StartCoroutine(FadeTo(target, visible, d));
     }
 
-    IEnumerator FadeTo(float target, bool finalVisible, float d)
+    private IEnumerator FadeTo(float target, bool finalVisible, float d)
     {
         float start = cg.alpha;
         float t = 0f;
