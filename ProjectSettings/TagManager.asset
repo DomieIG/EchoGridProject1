@@ -7,6 +7,7 @@ TagManager:
   - CorrectKeyCard
   - Key
   - T3KeyCard
+  - KeyCard
   layers:
   - Default
   - TransparentFX
@@ -17,7 +18,7 @@ TagManager:
   - Reveal
   - Key
   - Screw
-  - 
+  - ItemPickup
   - 
   - 
   - 
